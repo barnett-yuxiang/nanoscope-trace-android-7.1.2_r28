@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1242,6 +1242,14 @@ void InstructionCodeGeneratorX86_64::HandleGoto(HInstruction* got, HBasicBlock* 
     __ jmp(codegen_->GetLabelOf(successor));
   }
 }
+
+void LocationsBuilderX86_64::VisitTraceStart(HTraceStart* trace_start ATTRIBUTE_UNUSED) { }
+
+void InstructionCodeGeneratorX86_64::VisitTraceStart(HTraceStart* trace_start ATTRIBUTE_UNUSED) { }
+
+void LocationsBuilderX86_64::VisitTraceEnd(HTraceEnd* trace_end ATTRIBUTE_UNUSED) { }
+
+void InstructionCodeGeneratorX86_64::VisitTraceEnd(HTraceEnd* trace_end ATTRIBUTE_UNUSED) { }
 
 void LocationsBuilderX86_64::VisitGoto(HGoto* got) {
   got->SetLocations(nullptr);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -281,6 +281,8 @@ bool HInstructionBuilder::Build() {
 
     if (current_block_->IsEntryBlock()) {
       InitializeParameters();
+      // Insert an HTraceStart instruction at the beginning of every method.
+      AppendInstruction(new (arena_) HTraceStart());
       AppendInstruction(new (arena_) HSuspendCheck(0u));
       AppendInstruction(new (arena_) HGoto(0u));
       continue;
@@ -632,8 +634,12 @@ void HInstructionBuilder::BuildReturn(const Instruction& instruction,
       }
       AppendInstruction(new (arena_) HMemoryBarrier(kStoreStore, dex_pc));
     }
+    // Insert an HTraceEnd instruction before every return
+    AppendInstruction(new (arena_) HTraceEnd());
     AppendInstruction(new (arena_) HReturnVoid(dex_pc));
   } else {
+    // Insert an HTraceEnd instruction before every return
+    AppendInstruction(new (arena_) HTraceEnd());
     HInstruction* value = LoadLocal(instruction.VRegA(), type);
     AppendInstruction(new (arena_) HReturn(value, dex_pc));
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,8 +107,13 @@ ADD_TEST_EQ(THREAD_ID_OFFSET,
 ADD_TEST_EQ(THREAD_IS_GC_MARKING_OFFSET,
             art::Thread::IsGcMarkingOffset<__SIZEOF_POINTER__>().Int32Value())
 
+// Offset of field Thread::tlsPtr_.trace_data_ptr.
+#define THREAD_TRACE_DATA_OFFSET 128
+ADD_TEST_EQ(THREAD_TRACE_DATA_OFFSET,
+            art::Thread::TraceDataPtrOffset<__SIZEOF_POINTER__>().Int32Value())
+
 // Offset of field Thread::tlsPtr_.card_table.
-#define THREAD_CARD_TABLE_OFFSET 128
+#define THREAD_CARD_TABLE_OFFSET (THREAD_TRACE_DATA_OFFSET + (6 * __SIZEOF_POINTER__))
 ADD_TEST_EQ(THREAD_CARD_TABLE_OFFSET,
             art::Thread::CardTableOffset<__SIZEOF_POINTER__>().Int32Value())
 
@@ -290,7 +295,7 @@ ADD_TEST_EQ(MIRROR_STRING_COUNT_OFFSET, art::mirror::String::CountOffset().Int32
 ADD_TEST_EQ(MIRROR_STRING_VALUE_OFFSET, art::mirror::String::ValueOffset().Int32Value())
 
 // Offsets within java.lang.reflect.ArtMethod.
-#define ART_METHOD_DEX_CACHE_METHODS_OFFSET_32 20
+#define ART_METHOD_DEX_CACHE_METHODS_OFFSET_32 24
 ADD_TEST_EQ(ART_METHOD_DEX_CACHE_METHODS_OFFSET_32,
             art::ArtMethod::DexCacheResolvedMethodsOffset(4).Int32Value())
 
@@ -298,7 +303,7 @@ ADD_TEST_EQ(ART_METHOD_DEX_CACHE_METHODS_OFFSET_32,
 ADD_TEST_EQ(ART_METHOD_DEX_CACHE_METHODS_OFFSET_64,
             art::ArtMethod::DexCacheResolvedMethodsOffset(8).Int32Value())
 
-#define ART_METHOD_DEX_CACHE_TYPES_OFFSET_32 24
+#define ART_METHOD_DEX_CACHE_TYPES_OFFSET_32 28
 ADD_TEST_EQ(ART_METHOD_DEX_CACHE_TYPES_OFFSET_32,
             art::ArtMethod::DexCacheResolvedTypesOffset(4).Int32Value())
 
@@ -306,7 +311,7 @@ ADD_TEST_EQ(ART_METHOD_DEX_CACHE_TYPES_OFFSET_32,
 ADD_TEST_EQ(ART_METHOD_DEX_CACHE_TYPES_OFFSET_64,
             art::ArtMethod::DexCacheResolvedTypesOffset(8).Int32Value())
 
-#define ART_METHOD_JNI_OFFSET_32 28
+#define ART_METHOD_JNI_OFFSET_32 32
 ADD_TEST_EQ(ART_METHOD_JNI_OFFSET_32,
             art::ArtMethod::EntryPointFromJniOffset(4).Int32Value())
 
@@ -314,7 +319,7 @@ ADD_TEST_EQ(ART_METHOD_JNI_OFFSET_32,
 ADD_TEST_EQ(ART_METHOD_JNI_OFFSET_64,
             art::ArtMethod::EntryPointFromJniOffset(8).Int32Value())
 
-#define ART_METHOD_QUICK_CODE_OFFSET_32 32
+#define ART_METHOD_QUICK_CODE_OFFSET_32 36
 ADD_TEST_EQ(ART_METHOD_QUICK_CODE_OFFSET_32,
             art::ArtMethod::EntryPointFromQuickCompiledCodeOffset(4).Int32Value())
 

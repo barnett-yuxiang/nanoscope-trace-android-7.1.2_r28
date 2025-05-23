@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -815,6 +815,21 @@ const char* Class::GetDescriptor(std::string* storage) {
   } else if (IsArrayClass()) {
     return GetArrayDescriptor(storage);
   } else if (IsProxyClass()) {
+    *storage = Runtime::Current()->GetClassLinker()->GetDescriptorForProxy(this);
+    return storage->c_str();
+  } else {
+    const DexFile& dex_file = GetDexFile();
+    const DexFile::TypeId& type_id = dex_file.GetTypeId(GetClassDef()->class_idx_);
+    return dex_file.GetTypeDescriptor(type_id);
+  }
+}
+
+const char* Class::GetDescriptorAssumingDex(std::string* storage) {
+  if (UNLIKELY(IsPrimitive())) {
+    return Primitive::Descriptor(GetPrimitiveType());
+  } else if (UNLIKELY(IsArrayClass())) {
+    return GetArrayDescriptor(storage);
+  } else if (UNLIKELY(IsProxyClass())) {
     *storage = Runtime::Current()->GetClassLinker()->GetDescriptorForProxy(this);
     return storage->c_str();
   } else {

@@ -566,3 +566,104 @@ include $(art_path)/runtime/openjdkjvm/Android.mk
 #   m art-boot-image ART_BOOT_IMAGE_EXTRA_ARGS=--dump-init-failures=fails.txt
 .PHONY: art-boot-image
 art-boot-image: $(DEFAULT_DEX_PREOPT_BUILT_IMAGE_FILENAME)
+
+TEST_ART_RUN_TEST_DEPENDENCIES := \
+  $(DX) \
+  $(HOST_OUT_EXECUTABLES)/jasmin \
+  $(HOST_OUT_EXECUTABLES)/smali \
+  $(HOST_OUT_EXECUTABLES)/dexmerger \
+  $(JACK)
+
+art_run_tests_dir := $(call intermediates-dir-for,PACKAGING,art-run-tests)/DATA
+nanoscope_test := 0-tracing
+nanoscope_test_dir := $(art_run_tests_dir)/art-run-tests/$(nanoscope_test)
+
+# Run integration tests for nanoscope. It seems like the following would be more appropriate than defining a new target:
+#     $ mma test-art-target-run-test-debug-prebuild-optimizing-relocate-ntrace-cms-checkjni-image-npictest-ndebuggable-0-tracing32
+# However, the above command fails with an error similar to the one mentioned here:
+#     https://groups.google.com/forum/#!topic/android-building/Z-YVTiqBSDQ
+# Most of the logic below is copied from define-build-art-run-test in Android.run-test.mk
+.PHONY: run-nanoscope-tests
+run-nanoscope-tests: $(TEST_ART_RUN_TEST_DEPENDENCIES) $(TARGET_JACK_CLASSPATH_DEPENDENCIES) | setup-jack-server
+	$(hide) adb root
+	$(hide) rm -rf $(nanoscope_test_dir) && mkdir -p $(nanoscope_test_dir)
+	$(hide) DX=$(abspath $(DX)) JASMIN=$(abspath $(HOST_OUT_EXECUTABLES)/jasmin) \
+	  SMALI=$(abspath $(HOST_OUT_EXECUTABLES)/smali) \
+	  DXMERGER=$(abspath $(HOST_OUT_EXECUTABLES)/dexmerger) \
+	  JACK_VERSION=$(JACK_DEFAULT_VERSION) \
+	  JACK=$(abspath $(JACK)) \
+	  JACK_VERSION=$(JACK_DEFAULT_VERSION) \
+	  JACK_CLASSPATH=$(TARGET_JACK_CLASSPATH) \
+	  $(art_path)/test/run-test --never-clean --output-path $(nanoscope_test_dir) $(nanoscope_test)
+
+VERSION_FILE := $(art_path)/version.txt
+ROM_VERSION := $(shell cat $(VERSION_FILE) | tr -d " \t\n\r" )
+
+ROM_ARCHIVE := $(OUT_DIR)/nanoscope-rom-$(ROM_VERSION).zip
+ROM_INSTALL_FILE := $(PRODUCT_OUT)/install.sh
+ROM_FILENAMES := \
+  android-info.txt \
+  ramdisk.img \
+  boot.img \
+  install.sh \
+  recovery.img \
+  vendor.img \
+  cache.img \
+  system.img
+ROM_FILE_DEPENDENCIES := $(foreach file, $(ROM_FILENAMES), $(PRODUCT_OUT)/$(file))
+
+EMULATOR_ARCHIVE_FILENAME := nanoscope-emulator-$(ROM_VERSION).zip
+EMULATOR_ARCHIVE := $(PRODUCT_OUT)/$(EMULATOR_ARCHIVE_FILENAME)
+LAUNCH_EMULATOR_FILE := $(PRODUCT_OUT)/emulator.sh
+EMULATOR_DUMMY_VENDOR_FILE := $(PRODUCT_OUT)/vendor.img
+EMULATOR_FILENAMES := \
+  emulator.sh \
+  ramdisk.img \
+  system.img
+EMULATOR_FILE_DEPENDENCIES := $(foreach file, $(EMULATOR_FILENAMES), $(PRODUCT_OUT)/$(file))
+
+ADDITIONAL_BUILD_PROPERTIES += "ro.build.nanoscope=$(ROM_VERSION)"
+
+$(ROM_INSTALL_FILE): $(art_path)/__install.sh
+	cp $(art_path)/__install.sh $(ROM_INSTALL_FILE)
+	chmod +x $(ROM_INSTALL_FILE)
+
+$(ROM_ARCHIVE): $(ROM_FILE_DEPENDENCIES)
+	rm -f $(ROM_ARCHIVE)
+	zip -j $(ROM_ARCHIVE) $(ROM_FILE_DEPENDENCIES)
+
+$(LAUNCH_EMULATOR_FILE): $(art_path)/__emulator.sh
+	cp $(art_path)/__emulator.sh $(LAUNCH_EMULATOR_FILE)
+	chmod +x $(LAUNCH_EMULATOR_FILE)
+
+$(EMULATOR_DUMMY_VENDOR_FILE):
+	touch $(EMULATOR_DUMMY_VENDOR_FILE)
+
+$(EMULATOR_ARCHIVE): $(EMULATOR_FILE_DEPENDENCIES)
+	rm -f $(EMULATOR_ARCHIVE)
+	(cd $(PRODUCT_OUT) && zip $(EMULATOR_ARCHIVE_FILENAME) $(EMULATOR_FILENAMES))
+
+.PHONY: make-release
+make-release: $(ROM_ARCHIVE)
+	echo $(ROM_ARCHIVE)
+
+.PHONY: make-emulator-release
+make-emulator-release: $(EMULATOR_ARCHIVE)
+	echo $(EMULATOR_ARCHIVE)
+
+TEST_ROM_DIR := $(ANDROID_PRODUCT_OUT)/nanoscope-rom-test
+
+.PHONY: test-release
+test-release: $(ROM_ARCHIVE)
+	rm -rf $(TEST_ROM_DIR)
+	mkdir -p $(TEST_ROM_DIR)
+	unzip $(ROM_ARCHIVE) -d $(TEST_ROM_DIR)
+	$(TEST_ROM_DIR)/install.sh
+	adb wait-for-device
+	adb shell getprop ro.build.nanoscope
+
+.PHONY: test-emulator-release
+test-emulator-release: $(EMULATOR_ARCHIVE)
+	rm -rf $(TEST_ROM_DIR)
+	mkdir -p $(TEST_ROM_DIR)
+	unzip $(EMULATOR_ARCHIVE) -d $(TEST_ROM_DIR)

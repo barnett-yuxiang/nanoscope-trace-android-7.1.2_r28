@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ class Arm32Assembler FINAL : public ArmAssembler {
   bool IsThumb() const OVERRIDE {
     return false;
   }
+
+  virtual void mrrc(Register r1, Register r2, int opc1, int coproc, int crm) OVERRIDE;
 
   // Data-processing instructions.
   virtual void and_(Register rd, Register rn, const ShifterOperand& so,

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/resource.h>
-#include <sys/time.h>
+
 
 #include <algorithm>
 #include <bitset>
@@ -27,6 +27,10 @@
 #include <iostream>
 #include <list>
 #include <sstream>
+#include <fstream>
+#include <stdio.h>
+#include <libgen.h>
+#include <unistd.h>
 
 #include "arch/context.h"
 #include "art_field-inl.h"
@@ -100,6 +104,207 @@ static constexpr bool kVerifyImageObjectsMarked = kIsDebugBuild;
 constexpr size_t kStackOverflowProtectedSize = 4 * kMemoryToolStackGuardSizeScale * KB;
 
 static const char* kThreadNameDuringStartup = "<native thread without managed peer>";
+
+void flush_trace_data(std::string out_path, int64_t* trace_data, int64_t* end, uint64_t* timer_data, uint64_t* timer_end, uint64_t* state_data, uint64_t* state_end)
+  SHARED_REQUIRES(Locks::mutator_lock_) {
+  std::map<ArtMethod*, std::string> pretty_method_cache;
+  std::string out_path_trace = out_path;
+  std::string out_path_timer = out_path + ".timer";
+  std::string out_path_state = out_path + ".state";
+  std::ofstream out_trace_tmp(out_path_trace + ".tmp", std::ofstream::trunc);
+  std::ofstream out_timer_tmp(out_path_timer + ".tmp", std::ofstream::trunc);
+  std::ofstream out_state_tmp(out_path_state + ".tmp", std::ofstream::trunc);
+  int64_t* ptr = trace_data;
+  uint64_t timer_ticks_per_second = ticks_per_second();
+  uint64_t seconds_to_nanoseconds = 1000000000;
+
+  uint64_t first_timestamp = 0;
+  uint64_t* timer_ptr = timer_data;
+  uint64_t* state_ptr = state_data;
+  if (out_trace_tmp.is_open()) {
+    while (ptr < end) {
+      ArtMethod* method = reinterpret_cast<ArtMethod*>(*ptr++);
+      std::string pretty_method;
+      if (method == nullptr) {
+        pretty_method = "POP";
+      } else if (UNLIKELY(reinterpret_cast<int64_t>(method) == 100)) {
+        pretty_method = reinterpret_cast<const char*>(*ptr++);
+      } else if (UNLIKELY(reinterpret_cast<int64_t>(method) == 101)) {
+        std::string a = std::string(reinterpret_cast<const char*>(*ptr++));
+        std::string b = std::string(reinterpret_cast<const char*>(*ptr++));
+        pretty_method = a + "#" + b;
+      } else {
+        auto it = pretty_method_cache.find(method);
+        if (it == pretty_method_cache.end()) {
+          pretty_method = PrettyMethod(method);
+          pretty_method_cache[method] = pretty_method;
+        } else {
+          pretty_method = it->second;
+        }
+      }
+      int64_t timestamp = reinterpret_cast<int64_t>(*ptr++);
+      timestamp = static_cast<uint64_t>((timestamp - first_timestamp) * (seconds_to_nanoseconds / static_cast<double>(timer_ticks_per_second)));
+      out_trace_tmp << timestamp << ":" << pretty_method << "\n";
+    }
+    while (timer_ptr < timer_end) {
+      uint64_t timestamp = reinterpret_cast<uint64_t>(*timer_ptr++);
+      timestamp = static_cast<uint64_t>((timestamp - first_timestamp) * (seconds_to_nanoseconds / static_cast<double>(timer_ticks_per_second)));
+      uint64_t signal_time = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t maj_pf = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t min_pf = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t ctx_swtich = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t bytes = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t objects = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t thread_alloc = reinterpret_cast<uint64_t>(*timer_ptr++);
+      uint64_t thread_free = reinterpret_cast<uint64_t>(*timer_ptr++);
+      out_timer_tmp << timestamp << ", " << signal_time << ", " << maj_pf << ", " << min_pf << ", " << ctx_swtich
+      << ", "<< bytes << ", " << objects << ", "<< thread_alloc << ", " << thread_free << "\n";
+    }
+
+    while (state_ptr < state_end) {
+      uint64_t timestamp = reinterpret_cast<uint64_t>(*state_ptr++);
+      timestamp = static_cast<uint64_t>((timestamp - first_timestamp) * (seconds_to_nanoseconds / static_cast<double>(timer_ticks_per_second)));
+      uint64_t old_state = reinterpret_cast<uint64_t>(*state_ptr++);
+      uint64_t new_state = reinterpret_cast<uint64_t>(*state_ptr++);
+      out_state_tmp << timestamp << ", "  << old_state << ", " << new_state << "\n";
+    }
+
+    std::rename((out_path_timer + ".tmp").c_str(), out_path_timer.c_str());
+    std::rename((out_path_state + ".tmp").c_str(), out_path_state.c_str());
+    std::rename((out_path_trace + ".tmp").c_str(), out_path_trace.c_str());
+  } else {
+    LOG(ERROR) << "Failed to open trace file: " << strerror(errno);
+  }
+  delete[] trace_data;
+  delete[] timer_data;
+  delete[] state_data;
+}
+
+void Thread::TraceStart(ArtMethod* method) {
+  if (LIKELY(tlsPtr_.trace_data_ptr != nullptr)) {  // Only trace if we're on the correct Thread. Use compiler hint to favor the performance of the traced Thread.
+    *tlsPtr_.trace_data_ptr++ = reinterpret_cast<int64_t>(method);
+    *tlsPtr_.trace_data_ptr++ = generic_timer_count();
+  }
+}
+
+void Thread::TraceStart(int64_t a) {
+  if (LIKELY(tlsPtr_.trace_data_ptr != nullptr)) {  // Only trace if we're on the correct Thread. Use compiler hint to favor the performance of the traced Thread.
+    *tlsPtr_.trace_data_ptr++ = a;
+    *tlsPtr_.trace_data_ptr++ = generic_timer_count();
+  }
+}
+
+void Thread::TraceStart(const char *name, const char *metadata) {
+  if (LIKELY(tlsPtr_.trace_data_ptr != nullptr)) {  // Only trace if we're on the correct Thread. Use compiler hint to favor the performance of the traced Thread.
+    *tlsPtr_.trace_data_ptr++ = 101;
+    *tlsPtr_.trace_data_ptr++ = reinterpret_cast<int64_t>(name);
+    *tlsPtr_.trace_data_ptr++ = reinterpret_cast<int64_t>(metadata);
+    *tlsPtr_.trace_data_ptr++ = generic_timer_count();
+  }
+}
+
+void Thread::TraceStart(const char *name) {
+  if (LIKELY(tlsPtr_.trace_data_ptr != nullptr)) {  // Only trace if we're on the correct Thread. Use compiler hint to favor the performance of the traced Thread.
+    *tlsPtr_.trace_data_ptr++ = 100;
+    *tlsPtr_.trace_data_ptr++ = reinterpret_cast<int64_t>(name);
+    *tlsPtr_.trace_data_ptr++ = generic_timer_count();
+  }
+}
+
+void Thread::TraceEnd() {
+  if (LIKELY(tlsPtr_.trace_data_ptr != nullptr)) {
+    *tlsPtr_.trace_data_ptr++ = 0;
+    *tlsPtr_.trace_data_ptr++ = generic_timer_count();
+  }
+}
+
+void Thread::StartTracing() {
+  LOG(INFO) << "nanoscope: Trace started, thread " << GetTid();
+  tlsPtr_.trace_data = new int64_t[40000000];   // Enough room for 10M methods
+  tlsPtr_.trace_data_ptr = tlsPtr_.trace_data;
+  tlsPtr_.timer_data = new uint64_t[1000000];   // Enough for 20s of sampling
+  tlsPtr_.timer_data_ptr = tlsPtr_.timer_data;
+  tlsPtr_.state_data = new uint64_t[1000000];
+  tlsPtr_.state_data_ptr = tlsPtr_.state_data;
+}
+
+void Thread::StopTracing(std::string out_path) {
+  if (tlsPtr_.trace_data == nullptr) {
+    return;
+  }
+
+  char* dir = dirname(strdup(out_path.c_str()));
+  std::string mkdirs = "mkdir -p " + std::string(dir);
+  int ret = system(mkdirs.c_str());
+  CHECK(ret != -1);
+
+  LOG(INFO) << "nanoscope: Flushing trace data to: " << out_path;
+  if (kIsDebugBuild) {
+    flush_trace_data(out_path, tlsPtr_.trace_data, tlsPtr_.trace_data_ptr, tlsPtr_.timer_data,tlsPtr_.timer_data_ptr, tlsPtr_.state_data, tlsPtr_.state_data_ptr);
+  } else {
+    new std::thread(flush_trace_data, out_path, tlsPtr_.trace_data, tlsPtr_.trace_data_ptr, tlsPtr_.timer_data, tlsPtr_.timer_data_ptr, tlsPtr_.state_data, tlsPtr_.state_data_ptr);
+  }
+  tlsPtr_.trace_data = nullptr;
+  tlsPtr_.trace_data_ptr = nullptr;
+  tlsPtr_.timer_data = nullptr;
+  tlsPtr_.timer_data_ptr = nullptr;
+  tlsPtr_.state_data = nullptr;
+  tlsPtr_.state_data_ptr = nullptr;
+
+  // A race condition exists if we stop tracing from a different Thread. In Thread::TraceStart and Thread::TraceEnd
+  // we may end up incrementing and dereferencing trace_data_ptr after we've nulled it out above. If we hit this race
+  // condition, we'll either crash due to a nullptr dereference or increment trace_data_ptr. In the latter case,
+  // trace_data_ptr != nullptr, which allows tracing to continue. Both cases are unlikely, but we at least ensure that
+  // we don't continue tracing forever by nulling out our pointers again after 100ms.
+  //
+  // Note: We need to support this case for the system property-based API implemented in "nanoscope_propertywatcher.h".
+  if (Thread::Current() != this) {
+    usleep(1000 * 100);
+    tlsPtr_.trace_data = nullptr;
+    tlsPtr_.trace_data_ptr = nullptr;
+    tlsPtr_.timer_data = nullptr;
+    tlsPtr_.timer_data_ptr = nullptr;
+    tlsPtr_.state_data = nullptr;
+    tlsPtr_.state_data_ptr = nullptr;
+  }
+}
+
+void Thread::TimerHandler(uint64_t time, uint64_t maj_pf, uint64_t min_pf, uint64_t ctx_swtich){
+  if(tlsPtr_.timer_data_ptr != nullptr){
+    *tlsPtr_.timer_data_ptr ++ = generic_timer_count();
+    *tlsPtr_.timer_data_ptr ++ = time;
+    *tlsPtr_.timer_data_ptr ++ = maj_pf;
+    *tlsPtr_.timer_data_ptr ++ = min_pf;
+    *tlsPtr_.timer_data_ptr ++ = ctx_swtich;
+
+    // Get allocation info
+    RuntimeStats* global_stats = Runtime::Current()->GetStats();
+    if(global_stats -> allocated_bytes > global_stats->freed_bytes){
+      *tlsPtr_.timer_data_ptr ++ = global_stats->allocated_bytes - global_stats->freed_bytes;
+    } else {
+      *tlsPtr_.timer_data_ptr ++ = 0;
+    }
+    if(global_stats->allocated_objects > global_stats->freed_objects){
+      *tlsPtr_.timer_data_ptr ++ = global_stats->allocated_objects - global_stats->freed_objects;
+    } else {
+      *tlsPtr_.timer_data_ptr ++ = 0;
+    }
+    RuntimeStats* thread_stats = GetStats();
+    *tlsPtr_.timer_data_ptr ++ = thread_stats->allocated_bytes;
+    *tlsPtr_.timer_data_ptr ++ = thread_stats->freed_bytes;
+  } else {
+    LOG(INFO) << "nanoscope: wrong thread" << "\n";
+  }
+}
+
+void Thread::LogStateTransition(ThreadState old_state, ThreadState new_state){
+  if(tlsPtr_.state_data_ptr != nullptr){
+    *tlsPtr_.state_data_ptr ++ = generic_timer_count();
+    *tlsPtr_.state_data_ptr ++ = old_state;
+    *tlsPtr_.state_data_ptr ++ = new_state;
+  }
+}
+
 
 void Thread::InitCardTable() {
   tlsPtr_.card_table = Runtime::Current()->GetHeap()->GetCardTable()->GetBiasedBegin();
@@ -878,7 +1083,19 @@ void Thread::InitPeer(ScopedObjectAccess& soa, jboolean thread_is_daemon, jobjec
       SetInt<kTransactionActive>(tlsPtr_.opeer, thread_priority);
 }
 
+// From Java, call Thread.setName("START_TRACING") to start tracing this thread. To stop,
+// call Thread.setName("STOP_TRACING:/sdcard/out.txt") to stop tracing and write the log
+// to "/sdcard/out.txt".
 void Thread::SetThreadName(const char* name) {
+  std::string name_str(name);
+  if (name_str.compare("START_TRACING") == 0) {
+    StartTracing();
+    return;
+  } else if (name_str.find("STOP_TRACING:") == 0) {
+    std::string out_path = name_str.substr(std::strlen("STOP_TRACING:"));
+    StopTracing(out_path);
+    return;
+  }
   tlsPtr_.name->assign(name);
   ::art::SetThreadName(name);
   Dbg::DdmSendThreadNotification(this, CHUNK_TYPE("THNM"));

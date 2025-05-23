@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -620,6 +620,14 @@ CodeGenerator* OptimizingCompiler::TryCompile(ArenaAllocator* arena,
   MaybeRecordStat(MethodCompilationStat::kAttemptCompilation);
   CompilerDriver* compiler_driver = GetCompilerDriver();
   InstructionSet instruction_set = compiler_driver->GetInstructionSet();
+
+  if (kIsDebugBuild) {
+    std::string method_name = PrettyMethod(method_idx, dex_file);
+    bool should_interpret = method_name.find("$interp$") != std::string::npos;
+    if (should_interpret) {
+      return nullptr;
+    }
+  }
 
   // Always use the Thumb-2 assembler: some runtime functionality
   // (like implicit stack overflow checks) assume Thumb-2.

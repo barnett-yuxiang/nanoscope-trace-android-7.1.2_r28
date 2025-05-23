@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,10 @@ ArtMethod* ArtMethod::FromReflectedMethod(const ScopedObjectAccessAlreadyRunnabl
   auto* abstract_method = soa.Decode<mirror::AbstractMethod*>(jlr_method);
   DCHECK(abstract_method != nullptr);
   return abstract_method->GetArtMethod();
+}
+
+void ArtMethod::SetTracingEnabled(bool enabled) {
+  is_trace_enabled = enabled;
 }
 
 mirror::String* ArtMethod::GetNameAsString(Thread* self) {
