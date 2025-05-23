@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -541,9 +541,7 @@ class Runtime {
     return is_running_on_memory_tool_;
   }
 
-  void SetTargetSdkVersion(int32_t version) {
-    target_sdk_version_ = version;
-  }
+  void SetTargetSdkVersion(int32_t version);
 
   int32_t GetTargetSdkVersion() const {
     return target_sdk_version_;

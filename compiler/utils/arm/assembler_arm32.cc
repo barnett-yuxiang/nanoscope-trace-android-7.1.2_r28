@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,14 @@ bool Arm32Assembler::ShifterOperandCanHold(Register rd ATTRIBUTE_UNUSED,
                                            SetCc set_cc ATTRIBUTE_UNUSED,
                                            ShifterOperand* shifter_op) {
   return ShifterOperandCanHoldArm32(immediate, shifter_op);
+}
+
+void Arm32Assembler::mrrc(Register r1 ATTRIBUTE_UNUSED,
+                           Register r2 ATTRIBUTE_UNUSED,
+                           int opc1 ATTRIBUTE_UNUSED,
+                           int coproc ATTRIBUTE_UNUSED,
+                           int crm ATTRIBUTE_UNUSED) {
+  UNIMPLEMENTED(FATAL) << "mrrc not implemented for arm32.";
 }
 
 void Arm32Assembler::and_(Register rd, Register rn, const ShifterOperand& so,

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2576,6 +2576,14 @@ void LocationsBuilderMIPS::VisitFloatConstant(HFloatConstant* constant) {
 void InstructionCodeGeneratorMIPS::VisitFloatConstant(HFloatConstant* constant ATTRIBUTE_UNUSED) {
   // Will be generated at use site.
 }
+
+void LocationsBuilderMIPS::VisitTraceStart(HTraceStart* trace_start ATTRIBUTE_UNUSED) { }
+
+void InstructionCodeGeneratorMIPS::VisitTraceStart(HTraceStart* trace_start ATTRIBUTE_UNUSED) { }
+
+void LocationsBuilderMIPS::VisitTraceEnd(HTraceEnd* trace_end ATTRIBUTE_UNUSED) { }
+
+void InstructionCodeGeneratorMIPS::VisitTraceEnd(HTraceEnd* trace_end ATTRIBUTE_UNUSED) { }
 
 void LocationsBuilderMIPS::VisitGoto(HGoto* got) {
   got->SetLocations(nullptr);

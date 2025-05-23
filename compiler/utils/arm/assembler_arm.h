@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -439,6 +439,9 @@ class ArmAssembler : public Assembler {
 
   // Is this assembler for the thumb instruction set?
   virtual bool IsThumb() const = 0;
+
+  // Load double-word system register into r1 and r2.
+  virtual void mrrc(Register r1, Register r2, int opc1, int coproc, int crm) = 0;
 
   // Data-processing instructions.
   virtual void and_(Register rd, Register rn, const ShifterOperand& so,

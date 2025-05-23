@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,6 +125,10 @@ class CatchBlockStackVisitor FINAL : public StackVisitor {
           ShadowFrame::DeleteDeoptimizedFrame(frame);
         }
       }
+
+      // When an exception is thrown from compiled code, we need to account for the skipped frames in our trace.
+      // While walking up the stack to find the corresponding catch block, we also pop our trace frames.
+      GetThread()->TraceEnd();
     }
     return true;  // Continue stack walk.
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2018 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,10 +32,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cutils/process_name.h>
 #include <limits>
 #include <memory_representation.h>
 #include <vector>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "JniConstants.h"
 #include "ScopedLocalRef.h"
@@ -54,6 +56,7 @@
 #include "arch/x86_64/registers_x86_64.h"
 #include "art_field-inl.h"
 #include "art_method-inl.h"
+#include "nanoscope_propertywatcher.h"
 #include "asm_support.h"
 #include "atomic.h"
 #include "base/arena_allocator.h"
@@ -2010,6 +2013,20 @@ bool Runtime::IsVerificationEnabled() const {
 
 bool Runtime::IsVerificationSoftFail() const {
   return verify_ == verifier::VerifyMode::kSoftFail;
+}
+
+void Runtime::SetTargetSdkVersion(int32_t version) {
+  target_sdk_version_ = version;
+
+  // We use Runtime::SetTargetSdkVersion as an early post-Zygote fork hook. InitNonZygoteOrPostFork would've been
+  // the obvious choice here, except that we need access to the process name AFTER it has been updated to the
+  // application package name, which happens in ZygoteConnection.handleChildProc. A search through the codebase
+  // reveals that Runtime::SetTargetSdkVersion is only executed from RuntimeInit.applicationInit so this seems like
+  // good alternative.
+  std::string package_name = std::string(get_process_name());
+  if (package_name.compare("system_server") != 0) {
+    NanoscopePropertyWatcher::attach(package_name);
+  }
 }
 
 LinearAlloc* Runtime::CreateLinearAlloc() {
